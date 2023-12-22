@@ -54,13 +54,11 @@ impl Hash for i32 {
 
 #[derive(Copy, Clone, Pod, Zeroable)]
 #[repr(C)]
-struct HashMap {
-    size: u32,
-    // TODO: This almost makes it seem like size and hashmask are rather u64, or
-    // at least one of them.
-    _unused: u32,
-    mask: u32,
-    _unused2: u32,
+struct CHashMap {
+    cur_size: u32,
+    _num_used: u32,
+    cur_mask: u32,
+    _grow_threshold: u32,
     elements: Address64,
 }
 
@@ -81,8 +79,8 @@ pub fn lookup<K: Hash, V: Pod>(
     key: &K::CompareKey,
 ) -> Result<Option<V>, Error> {
     let hash = K::hash(key) & 0x7fffffff;
-    let hash_map = process.read::<HashMap>(hash_map)?; // m_curMask
-    let mut ideal_pos = hash & hash_map.mask;
+    let hash_map = process.read::<CHashMap>(hash_map)?;
+    let mut ideal_pos = hash & hash_map.cur_mask;
 
     let slot_size = mem::size_of::<Slot<K::SlotKey, V>>() as u64;
 
@@ -102,15 +100,37 @@ pub fn lookup<K: Hash, V: Pod>(
         }
 
         // if ((int)((pMap->m_curSize + uIdealPos) - (curHash & uMask) & uMask) < iAddr)
-        let slot_ideal_pos = cur_slot.hash & hash_map.mask;
+        let slot_ideal_pos = cur_slot.hash & hash_map.cur_mask;
         let difference = ideal_pos.wrapping_sub(slot_ideal_pos);
-        let inbounds_difference = difference.wrapping_add(hash_map.size) & hash_map.mask;
+        let inbounds_difference = difference.wrapping_add(hash_map.cur_size) & hash_map.cur_mask;
         if inbounds_difference < i {
             break;
         }
 
-        ideal_pos = ideal_pos.wrapping_add(1) & hash_map.mask;
+        ideal_pos = ideal_pos.wrapping_add(1) & hash_map.cur_mask;
     }
 
     Ok(None)
+}
+
+pub fn iter<K: Hash + 'static, V: Pod>(
+    process: &Process,
+    hash_map: Address64,
+) -> Result<impl Iterator<Item = (K, V)> + '_, Error> {
+    let hash_map = process.read::<CHashMap>(hash_map)?;
+
+    Ok((0..hash_map.cur_size as u64).flat_map(move |i| {
+        let slot_size = mem::size_of::<Slot<K::SlotKey, V>>() as u64;
+
+        let cur_slot = process
+            .read::<Slot<K::SlotKey, V>>(hash_map.elements + i * slot_size)
+            .ok()?;
+
+        if cur_slot.hash == 0 {
+            return None;
+        }
+
+        let read_key = K::read_from_slot(&cur_slot.key, process).ok()?;
+        Some((read_key, cur_slot.value))
+    }))
 }

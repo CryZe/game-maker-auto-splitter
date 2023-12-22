@@ -1,6 +1,11 @@
 #![no_std]
 
-use asr::{future::next_tick, signature::Signature, string::ArrayCString, Address64, Process};
+use asr::{
+    future::next_tick,
+    signature::Signature,
+    string::{ArrayCString, ArrayString},
+    Address64, Process,
+};
 use bstr::ByteSlice;
 
 asr::async_main!(stable);
@@ -54,27 +59,28 @@ async fn main() {
                     gp_global_sig + 12 + process.read::<u32>(gp_global_sig + 8).unwrap();
                 let _gp_global = process.read::<Address64>(gp_global_ptr).unwrap();
 
-                for (index, instance) in instance::iter_all(&process, run_room).enumerate() {
-                    let instance_id = instance.read_id(&process).unwrap();
-                    let object_name = instance.read_object_name(&process).unwrap();
+                let obj_male = instance::iter_all(&process, run_room)
+                    .find(|instance| {
+                        let object_name = instance.read_object_name(&process).unwrap();
+                        object_name.matches("obj_male")
+                    })
+                    .unwrap();
 
-                    asr::print_limited::<256>(&format_args!(
-                        "instance {index} = {instance_id} ({})",
-                        object_name.as_bstr()
-                    ));
-
-                    if object_name.matches("obj_male") {
-                        asr::print_limited::<256>(&format_args!(
-                            "obj_male.anim_suffix = {:?}",
-                            instance
-                                .read_variable(&process, instance_var_lookup, "anim_suffix")
-                                .unwrap()
-                                .1
-                        ));
-                    }
-                }
+                let mut buf = ArrayString::<256>::new();
 
                 loop {
+                    for (var_name, value) in obj_male
+                        .iter_variables(&process, instance_var_lookup)
+                        .unwrap()
+                    {
+                        use core::fmt::Write;
+                        buf.clear();
+                        let _ = write!(buf, "{}", var_name.as_bstr());
+                        let mid = buf.len();
+                        let _ = write!(buf, "{value:?}");
+                        let (key, value) = buf.split_at(mid);
+                        asr::timer::set_variable(key, value);
+                    }
                     next_tick().await;
                 }
             })
