@@ -3,7 +3,7 @@ use core::iter;
 use asr::{Address64, Error, Process};
 use bytemuck::{Pod, Zeroable};
 
-use crate::{get_var_by_slot, get_var_slot, variable::Variable, SmallStr};
+use crate::{hash_map, variable::Variable, SmallStr};
 
 #[derive(Copy, Clone, Pod, Zeroable)]
 #[repr(transparent)]
@@ -28,44 +28,47 @@ impl Instance {
     pub fn read_variable(
         self,
         process: &Process,
-        instancevarlookup: Address64,
+        instance_var_lookup: Address64,
         name: &str,
     ) -> Result<(Address64, Option<Variable>), Error> {
-        let slot = get_var_slot(process, instancevarlookup, name);
-        let yyvarsmapoffs = 0x48;
-        let yyvarsmap = process.read::<Address64>(self.addr + yyvarsmapoffs)?;
-        let rvptr = get_var_by_slot(process, yyvarsmap, slot);
-        if rvptr.is_null() {
-            return Ok((rvptr, None));
+        const YY_VARS_MAP_OFFSET: u64 = 0x48;
+        const FLAGS_OFFSET: u64 = 8;
+        const KIND_OFFSET: u64 = 12;
+
+        let slot = hash_map::lookup::<SmallStr, i32>(process, instance_var_lookup, name)?.unwrap();
+        let yy_vars_map = process.read::<Address64>(self.addr + YY_VARS_MAP_OFFSET)?;
+        let rv_ptr = hash_map::lookup::<i32, Address64>(process, yy_vars_map, &slot)?.unwrap();
+        if rv_ptr.is_null() {
+            return Ok((rv_ptr, None));
         }
-        let flagsoffs = 8;
-        let kindoffs = 12;
-        let rkind = process.read::<i32>(rvptr + kindoffs)? & 0x0ffffff;
-        let _rflags = process.read::<i32>(rvptr + flagsoffs)?;
+
+        let rkind = process.read::<i32>(rv_ptr + KIND_OFFSET)? & 0x0ffffff;
+        let _rflags = process.read::<i32>(rv_ptr + FLAGS_OFFSET)?;
+
         let variable = match rkind {
-            0 => Variable::F64(process.read(rvptr)?),
+            0 => Variable::F64(process.read(rv_ptr)?),
             1 => {
-                let refthing = process.read::<Address64>(rvptr)?;
-                let thingptr = process.read::<Address64>(refthing)?;
-                let contents = process.read(thingptr)?;
+                let ref_thing = process.read::<Address64>(rv_ptr)?;
+                let thing_ptr = process.read::<Address64>(ref_thing)?;
+                let contents = process.read(thing_ptr)?;
 
                 Variable::String(contents)
             }
             5 => Variable::Undefined,
-            13 => Variable::Bool(process.read::<f64>(rvptr)? > 0.5),
+            13 => Variable::Bool(process.read::<f64>(rv_ptr)? > 0.5),
             _ => unimplemented!(),
         };
 
-        Ok((rvptr, Some(variable)))
+        Ok((rv_ptr, Some(variable)))
     }
 }
 
-pub fn iter_all(process: &Process, runroom: Address64) -> impl Iterator<Item = Instance> + '_ {
+pub fn iter_all(process: &Process, run_room: Address64) -> impl Iterator<Item = Instance> + '_ {
     const RUN_ROOM_LINKED_LIST_OFFSET: u64 = 216;
     const P_NEXT_PTR_OFFSET: u64 = 0x198;
 
     let instance = process
-        .read::<Instance>(runroom + RUN_ROOM_LINKED_LIST_OFFSET)
+        .read::<Instance>(run_room + RUN_ROOM_LINKED_LIST_OFFSET)
         .ok();
 
     iter::successors(instance, move |&instance| {
