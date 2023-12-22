@@ -1,0 +1,42 @@
+[package]
+name = "game-maker-auto-splitter"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+asr = { git = "https://github.com/LiveSplit/asr", features = [
+    # "alloc", # Working with allocations.
+    # "derive", # Defining your own settings structs, converting endianness, and binding to .NET classes.
+    # "flags", # Working with bit flags.
+    # "float-vars", # Setting floating point variables.
+    # "float-vars-small", # Setting floating point variables (small binary size).
+    # "integer-vars", # Setting integer variables.
+    "signature", # Scanning signatures.
+    # "wasi-no-std", # Support for no_std on WASI.
+    # "unity", # Accessing games using the Unity engine.
+    # "gba", # Accessing Game Boy Advance emulators.
+    # "gcn", # Accessing GameCube emulators.
+    # "genesis", # Accessing SEGA Genesis emulators.
+    # "ps1", # Accessing PlayStation 1 emulators.
+    # "ps2", # Accessing PlayStation 2 emulators.
+    # "sms", # Accessing SEGA Master System / GameGear emulators.
+    # "wii", # Accessing Wii emulators.
+] }
+
+# Bytemuck can be used to define structs that are being read from the game's process.
+bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
+bstr = { version = "*", default-features = false }
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+lto = true
+panic = "abort"
+codegen-units = 1
+strip = true
+
+[profile.release.build-override]
+opt-level = 0

@@ -1,0 +1,43 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "cargo",
+			"command": "b",
+			"problemMatcher": [
+				"$rustc",
+				"$rust-panic"
+			],
+			"group": "build",
+			"label": "Build Auto Splitter (Debug)"
+		},
+		{
+			"type": "cargo",
+			"command": "b",
+			"args": [
+				"--release"
+			],
+			"problemMatcher": [
+				"$rustc",
+				"$rust-panic"
+			],
+			"group": "build",
+			"label": "Build Auto Splitter (Release)"
+		},
+		{
+			"type": "cargo",
+			// Install the `cargo watch` subcommand from here:
+			// https://github.com/watchexec/cargo-watch?tab=readme-ov-file#install
+			"command": "watch",
+			"args": [
+				"-x",
+				"b"
+			],
+			"problemMatcher": [
+				"$rustc",
+				"$rust-panic"
+			],
+			"label": "Watch Auto Splitter"
+		},
+	]
+}
