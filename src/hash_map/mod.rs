@@ -1,6 +1,6 @@
 use core::mem;
 
-use asr::{Address64, Error, Process};
+use asr::{Address, Address64, Error, Process};
 use bytemuck::{Pod, Zeroable};
 
 use crate::SmallStr;
@@ -35,11 +35,11 @@ impl Hash for SmallStr {
 
 impl Hash for i32 {
     type SlotKey = i32;
-    type CompareKey = i32;
+    type CompareKey = (i32, bool);
 
-    fn hash(compare_key: &Self::CompareKey) -> u32 {
-        (*compare_key as u32)
-            .wrapping_mul(0x9E3779B1)
+    fn hash(&(compare_key, is_complex): &Self::CompareKey) -> u32 {
+        (compare_key as u32)
+            .wrapping_mul(is_complex as u32 * 0x9E3779B0 + 1)
             .wrapping_add(1)
     }
 
@@ -47,12 +47,12 @@ impl Hash for i32 {
         Ok(*slot_key)
     }
 
-    fn matches(&self, compare_key: &Self::CompareKey) -> bool {
+    fn matches(&self, (compare_key, _): &Self::CompareKey) -> bool {
         self == compare_key
     }
 }
 
-#[derive(Copy, Clone, Pod, Zeroable)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 #[repr(C)]
 struct CHashMap {
     cur_size: u32,
@@ -73,9 +73,10 @@ struct Slot<K, V> {
 unsafe impl<K: Pod, V: Pod> Pod for Slot<K, V> {}
 unsafe impl<K: Zeroable, V: Zeroable> Zeroable for Slot<K, V> {}
 
+/// Based on Code_Variable_Find_Slot_From_Name
 pub fn lookup<K: Hash, V: Pod>(
     process: &Process,
-    hash_map: Address64,
+    hash_map: Address,
     key: &K::CompareKey,
 ) -> Result<Option<V>, Error> {
     let hash = K::hash(key) & 0x7fffffff;
@@ -115,7 +116,7 @@ pub fn lookup<K: Hash, V: Pod>(
 
 pub fn iter<K: Hash + 'static, V: Pod>(
     process: &Process,
-    hash_map: Address64,
+    hash_map: Address,
 ) -> Result<impl Iterator<Item = (K, V)> + '_, Error> {
     let hash_map = process.read::<CHashMap>(hash_map)?;
 
