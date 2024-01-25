@@ -29,6 +29,8 @@ jobs:
       - name: Release
         if: github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v1
+        permissions: 
+          contents: write
         with:
           files: target/wasm32-unknown-unknown/release/game_maker_auto_splitter.wasm
           name: Latest
